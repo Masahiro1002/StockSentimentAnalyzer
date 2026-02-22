@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Sentiment Analyzer | 株価×センチメント可視化</title>
+    <meta name="description" content="Yahoo!ファイナンス掲示板のセンチメントと株価を連動して可視化するダッシュボード">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">📊</span>
+                <h1>Stock Sentiment<span class="logo-accent">Analyzer</span></h1>
+            </div>
+            <p class="header-subtitle">Yahoo!ファイナンス掲示板 × 株価 リアルタイム分析</p>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="main">
+        <!-- コントロールバー -->
+        <section class="controls">
+            <div class="control-group">
+                <label for="ticker-select" class="control-label">銘柄</label>
+                <select id="ticker-select" class="select-input">
+                    <option value="7203.T">7203.T - トヨタ自動車</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label class="control-label">期間</label>
+                <div class="btn-group" id="period-buttons">
+                    <button class="btn btn-period" data-days="30">30日</button>
+                    <button class="btn btn-period active" data-days="60">60日</button>
+                    <button class="btn btn-period" data-days="90">90日</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <button class="btn btn-refresh" id="refresh-btn">
+                    <span class="refresh-icon">↻</span> 更新
+                </button>
+            </div>
+        </section>
+
+        <!-- KPIカード -->
+        <section class="kpi-cards">
+            <div class="kpi-card">
+                <div class="kpi-icon kpi-icon-price">💹</div>
+                <div class="kpi-content">
+                    <span class="kpi-label">最新株価</span>
+                    <span class="kpi-value" id="kpi-price">--</span>
+                    <span class="kpi-change" id="kpi-price-change">--</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-icon kpi-icon-sentiment">🧠</div>
+                <div class="kpi-content">
+                    <span class="kpi-label">最新センチメント</span>
+                    <span class="kpi-value" id="kpi-sentiment">--</span>
+                    <span class="kpi-change" id="kpi-sentiment-label">--</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-icon kpi-icon-trend">📈</div>
+                <div class="kpi-content">
+                    <span class="kpi-label">トレンド</span>
+                    <span class="kpi-value" id="kpi-trend">--</span>
+                    <span class="kpi-change" id="kpi-trend-label">--</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-icon kpi-icon-data">📋</div>
+                <div class="kpi-content">
+                    <span class="kpi-label">データ件数</span>
+                    <span class="kpi-value" id="kpi-count">--</span>
+                    <span class="kpi-change" id="kpi-last-update">--</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- メインチャート -->
+        <section class="chart-section">
+            <div class="chart-header">
+                <h2 class="chart-title">株価 × センチメント推移</h2>
+                <div class="chart-legend">
+                    <span class="legend-item legend-price">● 株価（終値）</span>
+                    <span class="legend-item legend-sentiment">● センチメント</span>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="main-chart"></canvas>
+            </div>
+            <div class="chart-loading" id="chart-loading">
+                <div class="spinner"></div>
+                <p>データを読み込み中...</p>
+            </div>
+        </section>
+
+        <!-- データテーブル -->
+        <section class="table-section">
+            <h2 class="section-title">📋 詳細データ</h2>
+            <div class="table-wrapper">
+                <table class="data-table" id="data-table">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>終値</th>
+                            <th>センチメント</th>
+                            <th>評価</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <!-- JavaScriptで動的生成 -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- フッター -->
+    <footer class="footer">
+        <p>Stock Sentiment Analyzer — Yahoo!ファイナンス掲示板センチメント × 株価連動可視化</p>
+        <p class="footer-note">※ 本ツールは学習・研究目的です。投資判断の根拠としてはご利用ください自己責任でお願いします。</p>
+    </footer>
+
+    <!-- 設定モーダル（Supabase接続情報） -->
+    <div class="modal-overlay" id="config-modal" style="display:none;">
+        <div class="modal">
+            <h3 class="modal-title">⚙️ Supabase 接続設定</h3>
+            <p class="modal-desc">ダッシュボードを使用するには、Supabase の接続情報を入力してください。</p>
+            <div class="form-group">
+                <label for="config-url">Supabase URL</label>
+                <input type="url" id="config-url" class="form-input" placeholder="https://xxxxx.supabase.co">
+            </div>
+            <div class="form-group">
+                <label for="config-key">Supabase Anon Key</label>
+                <input type="text" id="config-key" class="form-input" placeholder="eyJhbGciOiJI...">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="config-save">接続</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
