@@ -130,8 +130,7 @@ def scrape_yahoo_finance_board(
     Returns:
         list[dict]: 各投稿の 'body' と 'posted_at' を含む辞書のリスト
     """
-    code = stock_code.replace(".T", "")
-    base_url = f"https://finance.yahoo.co.jp/quote/{code}.T/forum"
+    base_url = f"https://finance.yahoo.co.jp/quote/{stock_code}/forum"
 
     # 対象日付の決定
     if target_date is None:

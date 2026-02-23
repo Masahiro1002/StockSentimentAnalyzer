@@ -10,6 +10,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def fetch_tickers() -> list[dict]:
+    """
+    アクティブな銘柄リストをDBから取得する。
+
+    Returns:
+        list[dict]: 各銘柄の code, board_code, name を含む辞書リスト
+    """
+    client = get_supabase_client()
+    result = client.table("tickers") \
+        .select("code, board_code, name") \
+        .eq("active", True) \
+        .execute()
+    return result.data
+
+
 def get_supabase_client() -> Client:
     """Supabase クライアントを初期化して返す"""
     url = os.getenv("SUPABASE_URL")
@@ -51,6 +66,42 @@ def upsert_sentiment_data(records: list[dict]) -> dict:
     ).execute()
 
     print(f"[INFO] {len(records)} 件のレコードをUPSERTしました。")
+    return result
+
+
+def insert_stock_prices(records: list[dict]) -> dict:
+    """
+    株価データのみをDBに挿入する（既存レコードは上書きしない）。
+
+    sentiment_data テーブルに株価のみのレコードを挿入する。
+    既にセンチメントデータが存在する日付は ignore_duplicates により
+    スキップされるため、既存データは保護される。
+
+    Args:
+        records: 各レコードは以下のキーを含む辞書:
+            - date: str (YYYY-MM-DD)
+            - ticker: str (例: "7203.T")
+            - close_price: float
+
+    Returns:
+        dict: Supabase APIレスポンス
+    """
+    if not records:
+        return None
+
+    client = get_supabase_client()
+
+    # created_at を追加
+    for record in records:
+        record["created_at"] = datetime.utcnow().isoformat()
+
+    result = client.table("sentiment_data").upsert(
+        records,
+        on_conflict="date,ticker",
+        ignore_duplicates=True  # ON CONFLICT DO NOTHING
+    ).execute()
+
+    print(f"[INFO] {len(records)} 件の株価レコードを挿入しました（既存レコードはスキップ）。")
     return result
 
 

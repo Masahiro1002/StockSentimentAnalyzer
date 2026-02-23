@@ -18,13 +18,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.stock_data import get_stock_prices
 from src.scraper import scrape_yahoo_finance_board
 from src.sentiment import analyze_sentiment, aggregate_daily_sentiment
-from src.db import upsert_sentiment_data
+from src.db import upsert_sentiment_data, insert_stock_prices, fetch_sentiment_data, fetch_tickers
 
 
-# 対象銘柄リスト
-TARGET_TICKERS = [
-    {"code": "7203.T", "board_code": "7203", "name": "トヨタ自動車"},
-]
+
 
 # センチメント分析に使う投稿のサンプル数
 SENTIMENT_SAMPLE_SIZE = 30
@@ -39,7 +36,11 @@ def run_daily_analysis():
     print(f"   対象日: {yesterday}")
     print("=" * 60)
 
-    for ticker_info in TARGET_TICKERS:
+    # 銘柄リストをDBから取得
+    tickers = fetch_tickers()
+    print(f"\n📋 対象銘柄: {len(tickers)} 件")
+
+    for ticker_info in tickers:
         ticker = ticker_info["code"]
         board_code = ticker_info["board_code"]
         name = ticker_info["name"]
@@ -49,9 +50,9 @@ def run_daily_analysis():
         print(f"{'─' * 40}")
 
         try:
-            # 1. 株価データ取得（直近の株価を取得）
+            # 1. 株価データ取得（90日分）
             print("\n📈 Step 1: 株価データ取得中...")
-            stock_df = get_stock_prices(ticker, days=7)
+            stock_df = get_stock_prices(ticker)
             print(f"  → {len(stock_df)} 日分の株価データを取得")
 
             # 前日の株価を取得
@@ -79,26 +80,45 @@ def run_daily_analysis():
                     }]
                     upsert_sentiment_data(records)
                     print(f"  ✅ 株価データのみ保存")
-                continue
+            else:
+                # 3. ランダムサンプリング + センチメント分析
+                print(f"\n🤖 Step 3: {SENTIMENT_SAMPLE_SIZE}件をサンプリングしてセンチメント分析中...")
+                scored_posts = analyze_sentiment(posts, sample_size=SENTIMENT_SAMPLE_SIZE)
+                daily_sentiment = aggregate_daily_sentiment(scored_posts)
 
-            # 3. ランダムサンプリング + センチメント分析
-            print(f"\n🤖 Step 3: {SENTIMENT_SAMPLE_SIZE}件をサンプリングしてセンチメント分析中...")
-            scored_posts = analyze_sentiment(posts, sample_size=SENTIMENT_SAMPLE_SIZE)
-            daily_sentiment = aggregate_daily_sentiment(scored_posts)
+                score = daily_sentiment.get(yesterday, 0.0)
+                print(f"  → {yesterday} のセンチメントスコア: {score:+.3f}")
 
-            score = daily_sentiment.get(yesterday, 0.0)
-            print(f"  → {yesterday} のセンチメントスコア: {score:+.3f}")
+                # 4. センチメント + 株価をDB保存
+                print("\n💾 Step 4: センチメントデータ保存中...")
+                record = {
+                    "date": yesterday,
+                    "ticker": ticker,
+                    "sentiment_score": score,
+                    "close_price": float(close_price) if close_price is not None else None,
+                }
+                upsert_sentiment_data([record])
+                print(f"  ✅ 保存完了")
 
-            # 4. DB保存
-            print("\n💾 Step 4: DB保存中...")
-            record = {
-                "date": yesterday,
-                "ticker": ticker,
-                "sentiment_score": score,
-                "close_price": float(close_price) if close_price is not None else None,
-            }
-            upsert_sentiment_data([record])
-            print(f"  ✅ 保存完了")
+            # 5. 株価データ補完（90日分をDBに反映）
+            print("\n📈 Step 5: 株価データ補完中...")
+            existing_data = fetch_sentiment_data(ticker, days=90)
+            existing_dates = {r["date"] for r in existing_data}
+
+            new_stock_records = []
+            for date, price in price_map.items():
+                if date not in existing_dates:
+                    new_stock_records.append({
+                        "date": date,
+                        "ticker": ticker,
+                        "close_price": float(price),
+                    })
+
+            if new_stock_records:
+                insert_stock_prices(new_stock_records)
+                print(f"  → {len(new_stock_records)} 日分の株価データを補完")
+            else:
+                print(f"  → 補完不要（全期間のデータが存在）")
 
         except Exception as e:
             print(f"\n❌ エラーが発生しました ({ticker}): {e}")

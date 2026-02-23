@@ -7,7 +7,6 @@
 // 設定・定数
 // ============================================
 const STORAGE_KEY = 'stock_sentiment_config';
-const DEFAULT_TICKER = '7203.T';
 const DEFAULT_DAYS = 60;
 
 // ============================================
@@ -54,6 +53,23 @@ async function fetchSentimentData(ticker, days) {
 
     if (error) {
         throw new Error(`データ取得エラー: ${error.message}`);
+    }
+
+    return data || [];
+}
+
+async function fetchTickers() {
+    if (!supabaseClient) {
+        throw new Error('Supabase が未接続です');
+    }
+
+    const { data, error } = await supabaseClient
+        .from('tickers')
+        .select('code, name')
+        .eq('active', true);
+
+    if (error) {
+        throw new Error(`銘柄リスト取得エラー: ${error.message}`);
     }
 
     return data || [];
@@ -219,45 +235,54 @@ function updateKPIs(data) {
         return;
     }
 
-    const latest = data[data.length - 1];
-    const prev = data.length > 1 ? data[data.length - 2] : null;
+    // 株価があるレコードのうち最新のもの
+    const priceRecords = data.filter(d => d.close_price != null);
+    const latestPrice = priceRecords.length > 0 ? priceRecords[priceRecords.length - 1] : null;
+    const prevPrice = priceRecords.length > 1 ? priceRecords[priceRecords.length - 2] : null;
+
+    // センチメントがあるレコード（蓄積分のみ）
+    const sentimentRecords = data.filter(d => d.sentiment_score != null);
+    const latestSentiment = sentimentRecords.length > 0 ? sentimentRecords[sentimentRecords.length - 1] : null;
 
     // 最新株価
     const priceEl = document.getElementById('kpi-price');
     const priceChangeEl = document.getElementById('kpi-price-change');
-    if (latest.close_price != null) {
-        priceEl.textContent = `¥${Number(latest.close_price).toLocaleString()}`;
-        if (prev && prev.close_price != null) {
-            const diff = latest.close_price - prev.close_price;
-            const pct = ((diff / prev.close_price) * 100).toFixed(2);
+    if (latestPrice) {
+        priceEl.textContent = `¥${Number(latestPrice.close_price).toLocaleString()}`;
+        if (prevPrice) {
+            const diff = latestPrice.close_price - prevPrice.close_price;
+            const pct = ((diff / prevPrice.close_price) * 100).toFixed(2);
             priceChangeEl.textContent = `${diff >= 0 ? '+' : ''}${pct}%`;
             priceChangeEl.className = `kpi-change ${diff >= 0 ? 'positive' : 'negative'}`;
         }
     }
 
-    // 最新センチメント
+    // 最新センチメント（蓄積分から取得）
     const sentEl = document.getElementById('kpi-sentiment');
     const sentLabelEl = document.getElementById('kpi-sentiment-label');
-    const score = latest.sentiment_score;
-    sentEl.textContent = score != null ? `${score >= 0 ? '+' : ''}${Number(score).toFixed(3)}` : '--';
-    if (score != null) {
+    if (latestSentiment) {
+        const score = latestSentiment.sentiment_score;
+        sentEl.textContent = `${score >= 0 ? '+' : ''}${Number(score).toFixed(3)}`;
         let label, cls;
         if (score > 0.3) { label = '😊 ポジティブ'; cls = 'positive'; }
         else if (score < -0.3) { label = '😟 ネガティブ'; cls = 'negative'; }
         else { label = '😐 中立'; cls = ''; }
         sentLabelEl.textContent = label;
         sentLabelEl.className = `kpi-change ${cls}`;
+    } else {
+        sentEl.textContent = '--';
+        sentLabelEl.textContent = 'データなし';
     }
 
-    // トレンド（7日移動平均の傾き）
+    // トレンド（センチメント蓄積分の7日移動平均の傾き）
     const trendEl = document.getElementById('kpi-trend');
     const trendLabelEl = document.getElementById('kpi-trend-label');
-    if (data.length >= 7) {
-        const recent7 = data.slice(-7);
-        const avgRecent = recent7.reduce((s, d) => s + (d.sentiment_score || 0), 0) / 7;
-        const prev7 = data.slice(-14, -7);
+    if (sentimentRecords.length >= 7) {
+        const recent7 = sentimentRecords.slice(-7);
+        const avgRecent = recent7.reduce((s, d) => s + d.sentiment_score, 0) / 7;
+        const prev7 = sentimentRecords.slice(-14, -7);
         if (prev7.length >= 7) {
-            const avgPrev = prev7.reduce((s, d) => s + (d.sentiment_score || 0), 0) / 7;
+            const avgPrev = prev7.reduce((s, d) => s + d.sentiment_score, 0) / 7;
             const trendDiff = avgRecent - avgPrev;
             trendEl.textContent = trendDiff >= 0 ? '↗ 上昇' : '↘ 下降';
             trendLabelEl.textContent = `7日平均: ${avgRecent >= 0 ? '+' : ''}${avgRecent.toFixed(3)}`;
@@ -266,11 +291,15 @@ function updateKPIs(data) {
             trendEl.textContent = `${avgRecent >= 0 ? '+' : ''}${avgRecent.toFixed(3)}`;
             trendLabelEl.textContent = '7日移動平均';
         }
+    } else if (sentimentRecords.length > 0) {
+        const avg = sentimentRecords.reduce((s, d) => s + d.sentiment_score, 0) / sentimentRecords.length;
+        trendEl.textContent = `${avg >= 0 ? '+' : ''}${avg.toFixed(3)}`;
+        trendLabelEl.textContent = `${sentimentRecords.length}日平均`;
     }
 
     // データ件数
-    document.getElementById('kpi-count').textContent = data.length;
-    document.getElementById('kpi-last-update').textContent = `最終: ${latest.date}`;
+    document.getElementById('kpi-count').textContent = `${sentimentRecords.length} / ${data.length}`;
+    document.getElementById('kpi-last-update').textContent = `最終: ${(latestPrice || data[data.length - 1]).date}`;
 }
 
 // ============================================
@@ -283,7 +312,7 @@ function updateTable(data) {
     // 新しい順に表示
     const sorted = [...data].reverse();
 
-    for (const row of sorted.slice(0, 30)) {
+    for (const row of sorted) {
         const tr = document.createElement('tr');
 
         // 日付
@@ -328,10 +357,36 @@ function updateTable(data) {
 // ============================================
 // メイン処理
 // ============================================
-let currentTicker = DEFAULT_TICKER;
+let currentTicker = null;
 let currentDays = DEFAULT_DAYS;
 
+async function loadTickers() {
+    try {
+        const tickers = await fetchTickers();
+        const select = document.getElementById('ticker-select');
+        select.innerHTML = '';
+
+        for (const t of tickers) {
+            const option = document.createElement('option');
+            option.value = t.code;
+            option.textContent = `${t.code} - ${t.name}`;
+            select.appendChild(option);
+        }
+
+        // 最初の銘柄を選択してデータ読み込み
+        if (tickers.length > 0) {
+            currentTicker = tickers[0].code;
+            select.value = currentTicker;
+            loadData();
+        }
+    } catch (err) {
+        console.error('銘柄リスト取得失敗:', err);
+    }
+}
+
 async function loadData() {
+    if (!currentTicker) return;
+
     const loading = document.getElementById('chart-loading');
     loading.style.display = 'flex';
 
@@ -370,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const config = getStoredConfig();
     if (config && config.url && config.key) {
         initSupabase(config.url, config.key);
-        loadData();
+        loadTickers();
     } else {
         showConfigModal();
     }
@@ -388,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
         saveConfig(url, key);
         initSupabase(url, key);
         hideConfigModal();
-        loadData();
+        loadTickers();
     });
 
     // 期間切り替え

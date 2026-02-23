@@ -40,3 +40,40 @@ CREATE POLICY "Allow service role full access"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- ============================================
+-- 銘柄マスタテーブル
+-- ============================================
+CREATE TABLE IF NOT EXISTS tickers (
+    code TEXT PRIMARY KEY,           -- yfinance ティッカーコード (例: '7011.T', 'USDJPY=X')
+    board_code TEXT NOT NULL,        -- Yahoo!ファイナンス掲示板コード
+    name TEXT NOT NULL,              -- 銘柄名
+    active BOOLEAN DEFAULT true     -- 分析対象フラグ
+);
+
+-- 初期データ
+INSERT INTO tickers (code, board_code, name) VALUES
+    ('7011.T', '7011.T', '三菱重工業'),
+    ('8316.T', '8316.T', '三井住友FG'),
+    ('3003.T', '3003.T', 'ヒューリック'),
+    ('1326.T', '1326.T', 'SPDRゴールド'),
+    ('USDJPY=X', 'USDJPY=X', '米ドル/円')
+ON CONFLICT (code) DO NOTHING;
+
+-- RLS
+ALTER TABLE tickers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read tickers" ON tickers;
+CREATE POLICY "Allow public read tickers"
+    ON tickers
+    FOR SELECT
+    TO anon
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow service role full access on tickers" ON tickers;
+CREATE POLICY "Allow service role full access on tickers"
+    ON tickers
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
