@@ -173,6 +173,99 @@ def aggregate_daily_sentiment(scored_posts: list[dict]) -> dict[str, float]:
     }
 
 
+def analyze_news_sentiment(news_items: list[dict]) -> list[dict]:
+    """
+    Gemini でニュースヘッドラインの要約 + センチメント分析を一括実行する。
+
+    Args:
+        news_items: 各ニュースの 'headline' を含む辞書のリスト
+
+    Returns:
+        list[dict]: 各ニュースに 'summary' と 'sentiment_score' を追加した辞書のリスト
+    """
+    if not news_items:
+        return []
+
+    client = _get_gemini_client()
+    max_retries = 3
+    retry_base_delay = 60
+
+    # ヘッドライン一覧をプロンプトに組み込む
+    headlines_text = ""
+    for i, item in enumerate(news_items):
+        headlines_text += f"[ニュース{i + 1}] {item['headline']}\n"
+
+    prompt = f"""以下は株式・金融に関するニュースのヘッドラインです。
+各ニュースについて、以下の2つを分析してください:
+1. ヘッドラインの内容を1行で要約（最大50文字）
+2. 投資家から見たセンチメントスコア
+
+スコアの基準:
+- 1.0: 非常にポジティブ（好決算、株価上昇要因など）
+- 0.5: ややポジティブ
+- 0.0: 中立（テクニカル指標、市場概況など）
+- -0.5: ややネガティブ
+- -1.0: 非常にネガティブ（業績悪化、リスク要因など）
+
+ニュース:
+{headlines_text}
+
+以下のJSON形式で回答してください。余計なテキストは不要です:
+[{{"index": 1, "summary": "要約テキスト", "score": 0.5}}, ...]
+"""
+
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            response_text = response.text.strip()
+
+            # JSON 抽出
+            json_match = re.search(r"\[.*\]", response_text, re.DOTALL)
+            if json_match:
+                results = json.loads(json_match.group())
+            else:
+                print("[WARNING] ニュース分析: JSON解析に失敗、デフォルト値を使用")
+                results = [{"index": i + 1, "summary": item["headline"][:50], "score": 0.0}
+                           for i, item in enumerate(news_items)]
+
+            # 結果をニュースアイテムに付与
+            scored_news = []
+            for i, item in enumerate(news_items):
+                summary = item["headline"][:50]
+                score = 0.0
+                for r in results:
+                    if r.get("index") == i + 1:
+                        summary = r.get("summary", summary)
+                        score = max(-1.0, min(1.0, float(r.get("score", 0.0))))
+                        break
+
+                scored_news.append({
+                    **item,
+                    "summary": summary,
+                    "sentiment_score": round(score, 3),
+                })
+
+            return scored_news
+
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg and attempt < max_retries - 1:
+                delay_match = re.search(r"retry in ([\d.]+)s", error_msg)
+                delay = float(delay_match.group(1)) if delay_match else retry_base_delay
+                print(f"[RETRY] ニュース分析: レート制限到達、{delay:.0f}秒後にリトライ ({attempt + 1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                print(f"[ERROR] ニュース分析エラー: {e}")
+                break
+
+    # 全リトライ失敗時
+    return [{**item, "summary": item["headline"][:50], "sentiment_score": 0.0}
+            for item in news_items]
+
+
 if __name__ == "__main__":
     # テスト実行（ダミーデータ）
     test_posts = [

@@ -130,6 +130,95 @@ def fetch_sentiment_data(ticker: str, days: int = 90) -> list[dict]:
     return result.data
 
 
+def upsert_news_data(records: list[dict]) -> dict:
+    """
+    ニュースデータをDBにUPSERTする。
+
+    Args:
+        records: 各レコードは以下のキーを含む辞書:
+            - date: str (YYYY-MM-DD)
+            - ticker: str
+            - headline: str
+            - summary: str
+            - sentiment_score: float
+            - source_name: str
+            - source_url: str
+    """
+    if not records:
+        return None
+
+    client = get_supabase_client()
+
+    for record in records:
+        record["created_at"] = datetime.utcnow().isoformat()
+
+    result = client.table("news_data").upsert(
+        records,
+        on_conflict="date,ticker,headline"
+    ).execute()
+
+    print(f"[INFO] {len(records)} 件のニュースレコードを保存しました。")
+    return result
+
+
+def fetch_news_data(ticker: str, date: str) -> list[dict]:
+    """
+    指定日のニュースデータをDBから取得する。
+
+    Args:
+        ticker: 銘柄コード
+        date: 日付 (YYYY-MM-DD)
+
+    Returns:
+        list[dict]: ニュースレコードのリスト
+    """
+    client = get_supabase_client()
+
+    result = client.table("news_data") \
+        .select("date, ticker, headline, summary, sentiment_score, source_name, source_url") \
+        .eq("ticker", ticker) \
+        .eq("date", date) \
+        .order("sentiment_score", desc=True) \
+        .execute()
+
+    return result.data
+
+
+def fetch_news_sentiment_daily(ticker: str, days: int = 90) -> list[dict]:
+    """
+    指定期間のニュースセンチメント日別平均を取得する。
+
+    Args:
+        ticker: 銘柄コード
+        days: 取得する日数
+
+    Returns:
+        list[dict]: {date, avg_score} のリスト
+    """
+    client = get_supabase_client()
+
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    result = client.table("news_data") \
+        .select("date, sentiment_score") \
+        .eq("ticker", ticker) \
+        .gte("date", start_date) \
+        .order("date", desc=False) \
+        .execute()
+
+    # 日別に平均化
+    from collections import defaultdict
+    daily = defaultdict(list)
+    for row in result.data:
+        if row["sentiment_score"] is not None:
+            daily[row["date"]].append(row["sentiment_score"])
+
+    return [
+        {"date": date, "news_sentiment": round(sum(scores) / len(scores), 3)}
+        for date, scores in sorted(daily.items())
+    ]
+
+
 if __name__ == "__main__":
     # テスト: データ取得
     print("=== DB接続テスト ===")

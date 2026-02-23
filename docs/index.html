@@ -107,7 +107,8 @@
                 <h2 class="chart-title">株価 × センチメント推移</h2>
                 <div class="chart-legend">
                     <span class="legend-item legend-price">● 株価（終値）</span>
-                    <span class="legend-item legend-sentiment">● センチメント</span>
+                    <span class="legend-item legend-sentiment">● 掲示板</span>
+                    <span class="legend-item" style="color: #f59e0b;">┅ ニュース</span>
                 </div>
             </div>
             <div class="chart-container">
@@ -119,16 +120,22 @@
             </div>
         </section>
 
-        <!-- データテーブル -->
+        <!-- 詳細データ -->
         <section class="table-section">
-            <h2 class="section-title">📋 詳細データ</h2>
+            <div class="detail-header">
+                <h2 class="section-title">📋 詳細データ</h2>
+                <div class="date-picker-group">
+                    <label for="detail-date" class="control-label">日付</label>
+                    <input type="date" id="detail-date" class="select-input">
+                </div>
+            </div>
             <div class="table-wrapper">
                 <table class="data-table" id="data-table">
                     <thead>
                         <tr>
                             <th>日付</th>
                             <th>終値</th>
-                            <th>センチメント</th>
+                            <th>掲示板</th>
                             <th>評価</th>
                         </tr>
                     </thead>
@@ -136,6 +143,14 @@
                         <!-- JavaScriptで動的生成 -->
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <!-- ニュース一覧 -->
+        <section class="news-section" id="news-section" style="display:none;">
+            <h2 class="section-title">📰 ニュース</h2>
+            <div class="news-cards" id="news-cards">
+                <!-- JavaScriptで動的生成 -->
             </div>
         </section>
     </main>

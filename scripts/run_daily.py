@@ -5,7 +5,8 @@ run_daily.py - 日次バッチ処理メインスクリプト
   1. 株価データ取得（yfinance）
   2. 前日分の掲示板投稿をスクレイピング
   3. 30件をランダム抽出してGemini APIでセンチメント分析
-  4. Supabase に保存
+  4. Yahooニュースを取得し、要約 + センチメント分析
+  5. Supabase に保存
 """
 
 import sys
@@ -17,8 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.stock_data import get_stock_prices
 from src.scraper import scrape_yahoo_finance_board
-from src.sentiment import analyze_sentiment, aggregate_daily_sentiment
-from src.db import upsert_sentiment_data, insert_stock_prices, fetch_sentiment_data, fetch_tickers
+from src.news_scraper import scrape_yahoo_finance_news
+from src.sentiment import analyze_sentiment, aggregate_daily_sentiment, analyze_news_sentiment
+from src.db import upsert_sentiment_data, insert_stock_prices, fetch_sentiment_data, fetch_tickers, upsert_news_data
 
 
 
@@ -99,6 +101,33 @@ def run_daily_analysis():
                 }
                 upsert_sentiment_data([record])
                 print(f"  ✅ 保存完了")
+
+            # 4.5. Yahooニュース取得 + 分析
+            print(f"\n📰 Step 4.5: Yahooニュース取得中...")
+            news_items = scrape_yahoo_finance_news(board_code, target_date=yesterday)
+
+            if news_items:
+                print(f"\n🤖 ニュースセンチメント分析中...")
+                scored_news = analyze_news_sentiment(news_items)
+
+                # DB保存用レコード作成
+                news_records = []
+                for item in scored_news:
+                    news_records.append({
+                        "date": yesterday,
+                        "ticker": ticker,
+                        "headline": item["headline"][:200],
+                        "summary": item.get("summary", "")[:200],
+                        "sentiment_score": item.get("sentiment_score"),
+                        "source_name": item.get("source_name", ""),
+                        "source_url": item.get("source_url", ""),
+                    })
+
+                upsert_news_data(news_records)
+                avg_score = sum(r["sentiment_score"] or 0 for r in news_records) / len(news_records)
+                print(f"  → ニュースセンチメント平均: {avg_score:+.3f}")
+            else:
+                print(f"  → {yesterday} のニュースなし")
 
             # 5. 株価データ補完（90日分をDBに反映）
             print("\n📈 Step 5: 株価データ補完中...")

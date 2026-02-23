@@ -75,12 +75,62 @@ async function fetchTickers() {
     return data || [];
 }
 
+async function fetchNewsData(ticker, date) {
+    if (!supabaseClient) return [];
+
+    const { data, error } = await supabaseClient
+        .from('news_data')
+        .select('date, ticker, headline, summary, sentiment_score, source_name, source_url')
+        .eq('ticker', ticker)
+        .eq('date', date)
+        .order('sentiment_score', { ascending: false });
+
+    if (error) {
+        console.error('ニュースデータ取得エラー:', error.message);
+        return [];
+    }
+    return data || [];
+}
+
+async function fetchNewsSentiment(ticker, days) {
+    if (!supabaseClient) return [];
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    const { data, error } = await supabaseClient
+        .from('news_data')
+        .select('date, sentiment_score')
+        .eq('ticker', ticker)
+        .gte('date', startDateStr)
+        .order('date', { ascending: true });
+
+    if (error) {
+        console.error('ニュースセンチメント取得エラー:', error.message);
+        return {};
+    }
+
+    // 日別平均
+    const daily = {};
+    for (const row of (data || [])) {
+        if (row.sentiment_score == null) continue;
+        if (!daily[row.date]) daily[row.date] = [];
+        daily[row.date].push(row.sentiment_score);
+    }
+
+    const result = {};
+    for (const [date, scores] of Object.entries(daily)) {
+        result[date] = scores.reduce((a, b) => a + b, 0) / scores.length;
+    }
+    return result;
+}
 // ============================================
 // Chart.js グラフ管理
 // ============================================
 let mainChart = null;
 
-function createChart(data) {
+function createChart(data, newsSentimentMap = {}) {
     const ctx = document.getElementById('main-chart').getContext('2d');
 
     // 既存チャートがあれば破棄
@@ -91,6 +141,7 @@ function createChart(data) {
     const labels = data.map(d => d.date);
     const prices = data.map(d => d.close_price);
     const sentiments = data.map(d => d.sentiment_score);
+    const newsSentiments = labels.map(d => newsSentimentMap[d] ?? null);
 
     mainChart = new Chart(ctx, {
         type: 'line',
@@ -114,7 +165,7 @@ function createChart(data) {
                     order: 1,
                 },
                 {
-                    label: 'センチメント',
+                    label: '掲示板センチメント',
                     data: sentiments,
                     borderColor: '#8b5cf6',
                     backgroundColor: 'rgba(139, 92, 246, 0.08)',
@@ -128,6 +179,23 @@ function createChart(data) {
                     pointBorderWidth: 2,
                     yAxisID: 'y-sentiment',
                     order: 2,
+                },
+                {
+                    label: 'ニュースセンチメント',
+                    data: newsSentiments,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#f59e0b',
+                    pointBorderColor: '#92400e',
+                    pointBorderWidth: 2,
+                    borderDash: [5, 3],
+                    yAxisID: 'y-sentiment',
+                    order: 3,
                 },
             ],
         },
@@ -156,10 +224,14 @@ function createChart(data) {
                         label: function (context) {
                             if (context.datasetIndex === 0) {
                                 return `株価: ¥${context.parsed.y?.toLocaleString() ?? '--'}`;
+                            } else if (context.datasetIndex === 1) {
+                                const val = context.parsed.y;
+                                const emoji = val > 0.3 ? '😊' : val < -0.3 ? '😟' : '😐';
+                                return `掲示板: ${val?.toFixed(3) ?? '--'} ${emoji}`;
                             } else {
                                 const val = context.parsed.y;
                                 const emoji = val > 0.3 ? '😊' : val < -0.3 ? '😟' : '😐';
-                                return `センチメント: ${val?.toFixed(3) ?? '--'} ${emoji}`;
+                                return `ニュース: ${val?.toFixed(3) ?? '--'} ${emoji}`;
                             }
                         },
                     },
@@ -305,12 +377,13 @@ function updateKPIs(data) {
 // ============================================
 // データテーブル更新
 // ============================================
-function updateTable(data) {
+function updateTable(data, filterDate = null) {
     const tbody = document.getElementById('table-body');
     tbody.innerHTML = '';
 
-    // 新しい順に表示
-    const sorted = [...data].reverse();
+    // 日付でフィルタ
+    const filtered = filterDate ? data.filter(d => d.date === filterDate) : data;
+    const sorted = [...filtered].reverse();
 
     for (const row of sorted) {
         const tr = document.createElement('tr');
@@ -355,10 +428,70 @@ function updateTable(data) {
 }
 
 // ============================================
+// ニュースカード更新
+// ============================================
+function updateNewsCards(newsData) {
+    const section = document.getElementById('news-section');
+    const container = document.getElementById('news-cards');
+    container.innerHTML = '';
+
+    if (!newsData || newsData.length === 0) {
+        section.style.display = 'block';
+        container.innerHTML = '<div class="news-empty">📭 この日のニュースはありません</div>';
+        return;
+    }
+
+    section.style.display = 'block';
+
+    for (const news of newsData) {
+        const card = document.createElement('div');
+        card.className = 'news-card';
+
+        // スコアバッジ
+        const score = news.sentiment_score;
+        let scoreClass = 'neutral';
+        let scoreText = '0.000';
+        if (score != null) {
+            scoreText = `${score >= 0 ? '+' : ''}${Number(score).toFixed(3)}`;
+            if (score > 0.2) scoreClass = 'positive';
+            else if (score < -0.2) scoreClass = 'negative';
+        }
+
+        // URLがあればリンクに
+        const headlineHtml = news.source_url
+            ? `<a href="${news.source_url}" target="_blank" rel="noopener">${news.headline}</a>`
+            : news.headline;
+
+        card.innerHTML = `
+            <div class="news-card-header">
+                <div class="news-headline">${headlineHtml}</div>
+                <span class="news-score ${scoreClass}">${scoreText}</span>
+            </div>
+            ${news.summary ? `<div class="news-summary">${news.summary}</div>` : ''}
+            <div class="news-meta">${news.source_name || ''}</div>
+        `;
+
+        container.appendChild(card);
+    }
+}
+
+async function loadNewsForDate(date) {
+    if (!currentTicker || !date) return;
+    try {
+        updateTable(currentData, date);
+        const news = await fetchNewsData(currentTicker, date);
+        updateNewsCards(news);
+    } catch (err) {
+        console.error('ニュース読み込み失敗:', err);
+    }
+}
+
+// ============================================
 // メイン処理
 // ============================================
 let currentTicker = null;
 let currentDays = DEFAULT_DAYS;
+let currentData = [];
 
 async function loadTickers() {
     try {
@@ -391,7 +524,10 @@ async function loadData() {
     loading.style.display = 'flex';
 
     try {
-        const data = await fetchSentimentData(currentTicker, currentDays);
+        const [data, newsSentimentMap] = await Promise.all([
+            fetchSentimentData(currentTicker, currentDays),
+            fetchNewsSentiment(currentTicker, currentDays),
+        ]);
 
         if (data.length === 0) {
             loading.innerHTML = '<p>📭 データがありません。バッチ処理を実行してデータを収集してください。</p>';
@@ -399,9 +535,16 @@ async function loadData() {
         }
 
         loading.style.display = 'none';
-        createChart(data);
+        currentData = data;
+        createChart(data, newsSentimentMap);
         updateKPIs(data);
-        updateTable(data);
+
+        // 日付ピッカーのデフォルトを最新データの日付に
+        const latestDate = data[data.length - 1].date;
+        const datePicker = document.getElementById('detail-date');
+        datePicker.value = latestDate;
+        updateTable(data, latestDate);
+        loadNewsForDate(latestDate);
 
     } catch (err) {
         loading.innerHTML = `<p style="color: var(--accent-red);">❌ ${err.message}</p>`;
@@ -465,6 +608,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 更新ボタン
     document.getElementById('refresh-btn').addEventListener('click', () => {
         loadData();
+    });
+
+    // 日付ピッカー
+    document.getElementById('detail-date').addEventListener('change', (e) => {
+        loadNewsForDate(e.target.value);
     });
 
     // 設定ボタン（ヘッダー）

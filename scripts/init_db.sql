@@ -77,3 +77,39 @@ CREATE POLICY "Allow service role full access on tickers"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- ============================================
+-- ニュースデータテーブル
+-- ============================================
+CREATE TABLE IF NOT EXISTS news_data (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    date DATE NOT NULL,
+    ticker VARCHAR(20) NOT NULL,
+    headline TEXT NOT NULL,
+    summary TEXT,
+    sentiment_score DECIMAL(4, 3),
+    source_name TEXT,
+    source_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_news UNIQUE (date, ticker, headline)
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_ticker_date ON news_data (ticker, date DESC);
+
+-- RLS
+ALTER TABLE news_data ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read news" ON news_data;
+CREATE POLICY "Allow public read news"
+    ON news_data
+    FOR SELECT
+    TO anon
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow service role full access on news" ON news_data;
+CREATE POLICY "Allow service role full access on news"
+    ON news_data
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
