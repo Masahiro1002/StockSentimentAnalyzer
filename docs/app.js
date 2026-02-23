@@ -296,6 +296,25 @@ function createChart(data, newsSentimentMap = {}) {
                 easing: 'easeOutQuart',
             },
         },
+        plugins: [{
+            id: 'sentimentZeroLine',
+            beforeDraw(chart) {
+                const yAxis = chart.scales['y-sentiment'];
+                if (!yAxis) return;
+                const y = yAxis.getPixelForValue(0);
+                const { left, right } = chart.chartArea;
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([6, 4]);
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.moveTo(left, y);
+                ctx.lineTo(right, y);
+                ctx.stroke();
+                ctx.restore();
+            },
+        }],
     });
 }
 
