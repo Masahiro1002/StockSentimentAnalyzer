@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS sentiment_data (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     date DATE NOT NULL,
     ticker VARCHAR(20) NOT NULL,
-    sentiment_score DECIMAL(4, 3) NOT NULL DEFAULT 0.0,
+    sentiment_score DECIMAL(4, 3),
     close_price DECIMAL(12, 2),
     created_at TIMESTAMPTZ DEFAULT NOW(),
 

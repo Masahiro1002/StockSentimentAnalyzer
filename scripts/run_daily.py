@@ -75,7 +75,7 @@ def run_daily_analysis():
                     records = [{
                         "date": yesterday,
                         "ticker": ticker,
-                        "sentiment_score": 0.0,
+                        "sentiment_score": None,
                         "close_price": float(close_price),
                     }]
                     upsert_sentiment_data(records)

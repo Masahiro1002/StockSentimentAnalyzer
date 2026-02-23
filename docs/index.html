@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Stock Sentiment Analyzer | 株価×センチメント可視化</title>
     <meta name="description" content="Yahoo!ファイナンス掲示板のセンチメントと株価を連動して可視化するダッシュボード">
 
@@ -29,9 +29,12 @@
     <!-- ヘッダー -->
     <header class="header">
         <div class="header-inner">
-            <div class="logo">
-                <span class="logo-icon">📊</span>
-                <h1>Stock Sentiment<span class="logo-accent">Analyzer</span></h1>
+            <div class="header-top">
+                <div class="logo">
+                    <span class="logo-icon">📊</span>
+                    <h1>Stock Sentiment<span class="logo-accent">Analyzer</span></h1>
+                </div>
+                <button class="btn btn-settings" id="settings-btn" title="Supabase 接続設定">⚙️</button>
             </div>
             <p class="header-subtitle">Yahoo!ファイナンス掲示板 × 株価 リアルタイム分析</p>
         </div>
@@ -146,7 +149,10 @@
     <!-- 設定モーダル（Supabase接続情報） -->
     <div class="modal-overlay" id="config-modal" style="display:none;">
         <div class="modal">
-            <h3 class="modal-title">⚙️ Supabase 接続設定</h3>
+            <div class="modal-header">
+                <h3 class="modal-title">⚙️ Supabase 接続設定</h3>
+                <button class="btn-modal-close" id="config-close" title="閉じる">&times;</button>
+            </div>
             <p class="modal-desc">ダッシュボードを使用するには、Supabase の接続情報を入力してください。</p>
             <div class="form-group">
                 <label for="config-url">Supabase URL</label>

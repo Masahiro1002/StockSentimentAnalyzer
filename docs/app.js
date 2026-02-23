@@ -466,4 +466,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('refresh-btn').addEventListener('click', () => {
         loadData();
     });
+
+    // 設定ボタン（ヘッダー）
+    document.getElementById('settings-btn').addEventListener('click', () => {
+        const config = getStoredConfig();
+        if (config) {
+            document.getElementById('config-url').value = config.url || '';
+            document.getElementById('config-key').value = config.key || '';
+        }
+        showConfigModal();
+    });
+
+    // モーダル閉じるボタン
+    document.getElementById('config-close').addEventListener('click', () => {
+        hideConfigModal();
+    });
 });
