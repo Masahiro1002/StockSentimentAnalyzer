@@ -11,7 +11,7 @@ run_daily.py - 日次バッチ処理メインスクリプト
 
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -31,7 +31,8 @@ SENTIMENT_SAMPLE_SIZE = 30
 
 def run_daily_analysis():
     """日次分析バッチを実行する"""
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    jst = timezone(timedelta(hours=9))
+    yesterday = (datetime.now(jst) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     print("=" * 60)
     print("📊 Stock Sentiment Analyzer - 日次バッチ処理")
