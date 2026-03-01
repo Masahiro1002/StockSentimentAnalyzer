@@ -18,8 +18,8 @@ def get_stock_prices(ticker: str, days: int = 90) -> pd.DataFrame:
     Returns:
         pd.DataFrame: 'date' と 'close_price' カラムを持つDataFrame
     """
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
+    end_date = datetime.now() + timedelta(days=1)  # yfinanceはend_dateをexclusiveで扱うため翌日を指定
+    start_date = datetime.now() - timedelta(days=days)
 
     stock = yf.Ticker(ticker)
     hist = stock.history(start=start_date.strftime("%Y-%m-%d"),

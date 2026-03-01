@@ -20,7 +20,7 @@ from src.stock_data import get_stock_prices
 from src.scraper import scrape_yahoo_finance_board
 from src.news_scraper import scrape_yahoo_finance_news
 from src.sentiment import analyze_sentiment, aggregate_daily_sentiment, analyze_news_sentiment
-from src.db import upsert_sentiment_data, insert_stock_prices, fetch_sentiment_data, fetch_tickers, upsert_news_data
+from src.db import upsert_sentiment_data, insert_stock_prices, fetch_tickers, upsert_news_data
 
 
 
@@ -131,24 +131,21 @@ def run_daily_analysis():
                 print(f"  → {yesterday} のニュースなし")
 
             # 5. 株価データ補完（90日分をDBに反映）
+            # close_price は常にUPSERTで更新する（センチメントスコアは上書きしない）
             print("\n📈 Step 5: 株価データ補完中...")
-            existing_data = fetch_sentiment_data(ticker, days=90)
-            existing_dates = {r["date"] for r in existing_data}
-
-            new_stock_records = []
+            stock_records = []
             for date, price in price_map.items():
-                if date not in existing_dates:
-                    new_stock_records.append({
-                        "date": date,
-                        "ticker": ticker,
-                        "close_price": float(price),
-                    })
+                stock_records.append({
+                    "date": date,
+                    "ticker": ticker,
+                    "close_price": float(price),
+                })
 
-            if new_stock_records:
-                insert_stock_prices(new_stock_records)
-                print(f"  → {len(new_stock_records)} 日分の株価データを補完")
+            if stock_records:
+                insert_stock_prices(stock_records)
+                print(f"  → {len(stock_records)} 日分の株価データをUPSERT")
             else:
-                print(f"  → 補完不要（全期間のデータが存在）")
+                print(f"  → 株価データなし")
 
         except Exception as e:
             print(f"\n❌ エラーが発生しました ({ticker}): {e}")

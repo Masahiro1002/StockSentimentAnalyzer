@@ -71,11 +71,8 @@ def upsert_sentiment_data(records: list[dict]) -> dict:
 
 def insert_stock_prices(records: list[dict]) -> dict:
     """
-    株価データのみをDBに挿入する（既存レコードは上書きしない）。
-
-    sentiment_data テーブルに株価のみのレコードを挿入する。
-    既にセンチメントデータが存在する日付は ignore_duplicates により
-    スキップされるため、既存データは保護される。
+    株価データをDBにUPSERTする。close_price のみを持つレコードを渡すことで、
+    既存のセンチメントスコアを上書きせずに株価だけ更新できる。
 
     Args:
         records: 各レコードは以下のキーを含む辞書:
@@ -95,13 +92,13 @@ def insert_stock_prices(records: list[dict]) -> dict:
     for record in records:
         record["created_at"] = datetime.utcnow().isoformat()
 
+    # close_price を常に更新する（sentiment_score を含まないレコードを渡すため既存スコアは保護される）
     result = client.table("sentiment_data").upsert(
         records,
-        on_conflict="date,ticker",
-        ignore_duplicates=True  # ON CONFLICT DO NOTHING
+        on_conflict="date,ticker"
     ).execute()
 
-    print(f"[INFO] {len(records)} 件の株価レコードを挿入しました（既存レコードはスキップ）。")
+    print(f"[INFO] {len(records)} 件の株価レコードをUPSERTしました。")
     return result
 
 
